@@ -1,6 +1,6 @@
-const CATALOGORUSO = require("./models/catalogos.models");
-const CATALOGOCATEGORIARUSO = require("./models/catalogosCategorias.models");
-const CATALOGOCATEGORIUNIDADRUSO = require("./models/catalogosCategoriasUnidad.models");
+const CATALOGORUSOMERCEDES = require("./models/catalogoRusoMercedes.model");
+const CATALOGOCATEGORIARUSOMERCEDES = require("./models/catalogosCategoriaRusoMercedes.model");
+const CATALOGOCATEGORIUNIDADRUSMERCEDES = require("./models/catalogoCategoriaUnidadMercedes.model");
 const CATALOGOCATEGORIUNIDADIMAGENRUSO = require("./models/catalogosCategoriasUnidadImagen.models");
 const CATALOGOVEHICULO = require("./models/catalogosVehiculo.models");
 const RUSO = require("./models/rusoData.model");
@@ -18,6 +18,8 @@ const axios = require("axios");
   //"SCANIA202010",
   //"VCV201606", NO
 ];
+
+const BATCH_SIZE = 5000;
 
 async function modelosMarcas(catalogo) {
   const response = await axios.get(
@@ -63,7 +65,9 @@ async function versionesModelos(catalogo, modelos) {
 }
 
 async function catalogoCategorias() {
-  let data = await CATALOGORUSO.find({}).lean();
+    let ingresadas = await CATALOGOCATEGORIARUSOMERCEDES.distinct("VehicleId")
+
+  let data = await CATALOGORUSOMERCEDES.find({VehicleId:{$nin:ingresadas}}).lean();
 
   for (let item of data) {
     const response = await axios.get(
@@ -82,42 +86,122 @@ async function catalogoCategorias() {
       };
       respuesta.push(catego);
     }
-    await CATALOGOCATEGORIARUSO.insertMany(respuesta);
+    await CATALOGOCATEGORIARUSOMERCEDES.insertMany(respuesta);
+    // console.log({respuesta});
     console.log("vehiculo: " + item.VehicleId);
   }
   console.log("LISTO");
 }
 
 async function catalogoCategoriasUnidades() {
-  let data = await CATALOGOCATEGORIARUSO.find({}).lean();
+    try {
+        let totalDocs = await CATALOGOCATEGORIARUSOMERCEDES.countDocuments();
+        let processed = 0;
 
-  for (let item of data) {
-    const response = await axios.get(
-      `https://www.etsp.ru/Details/OriginalCatalog.ashx?action=GetUnits&code=${item.catalogoId}&vehicleId=${item.VehicleId}&ssd=${item.ssd}&categoryId=${item.CategoryId}&kind=0`
-    );
-    let unidades = response.data.data.Units;
-    if (unidades) {
-      let resultado = [];
-      for (let el of unidades) {
-        let unit = {
-          catalogoId: "SCANIA202010",
-          VehicleId: item.VehicleId,
-          CategoryId: item.CategoryId,
-          NameCategorie: item.Name,
-          UnitId: el.UnitId,
-          ImageUrl: el.ImageUrl,
-          NameUnit: el.Name,
-          Code: el.Code,
-          ssd: el.Ssd,
-        };
-        resultado.push(unit);
-      }
-      await CATALOGOCATEGORIUNIDADRUSO.insertMany(resultado);
+        while (processed < totalDocs) {
+            let data = await CATALOGOCATEGORIARUSOMERCEDES.find({})
+                .skip(processed)
+                .limit(BATCH_SIZE)
+                .lean();
+
+            for (let item of data) {
+                try {
+                    let response = await axios.get(`https://www.etsp.ru/Details/OriginalCatalog.ashx?action=GetUnits&code=${item.catalogoId}&vehicleId=${item.VehicleId}&ssd=${item.ssd}&categoryId=${item.CategoryId}&kind=0`);
+
+                    let unidades = response.data.data.Units;
+                    if (unidades) {
+                        let resultado = [];
+                        for (let el of unidades) {
+                            let unit = {
+                                catalogoId: "MBC201810",
+                                VehicleId: item.VehicleId,
+                                CategoryId: item.CategoryId,
+                                NameCategorie: item.Name,
+                                UnitId: el.UnitId,
+                                ImageUrl: el.ImageUrl,
+                                NameUnit: el.Name,
+                                Code: el.Code,
+                                ssd: el.Ssd,
+                            };
+                            resultado.push(unit);
+                        }
+                        // Aquí puedes hacer algo con 'resultado', como insertarlo en la base de datos
+                        await CATALOGOCATEGORIUNIDADRUSMERCEDES.insertMany(resultado);
+                        console.log(`Guarda VehicleID: ${resultado[0].VehicleId},CategoryId: ${resultado[0].CategoryId},UnitID: ${resultado[0].UnitId} `);
+                        //console.log(resultado);
+                        
+                    }
+                } catch (error) {
+                    console.error(`Error al procesar el item con VehicleId ${item.VehicleId}:`, error);
+                }
+            }
+
+            processed += data.length;
+        }
+        console.log("LISTO");
+    } catch (error) {
+        console.log("Error en la función principal:", error);
     }
-    console.log(item.VehicleId);
-  }
-  console.log("LISTO");
 }
+
+// async function catalogoCategoriasUnidades() {
+//     try {
+//         //TODO: Agregar los que ya fueron ingresados 
+//         let totalDocs = await CATALOGOCATEGORIARUSOMERCEDES.countDocuments();
+//         let processed = 0;
+//         // console.log(totalDocs);
+//         while (processed < totalDocs) {
+//             let data = await CATALOGOCATEGORIARUSOMERCEDES.find({})
+//                 .skip(processed)
+//                 .limit(BATCH_SIZE)
+//                 .lean();
+        
+//         // console.log(data);
+//         // for (let item of data) {
+//         //   const response = await axios.get(
+//         //     `https://www.etsp.ru/Details/OriginalCatalog.ashx?action=GetUnits&code=${item.catalogoId}&vehicleId=${item.VehicleId}&ssd=${item.ssd}&categoryId=${item.CategoryId}&kind=0`
+//         //   );
+
+//         //   let unidades = response.data.data.Units;
+//         //   if (unidades) {
+
+//         let requests = data.map(item => axios.get(`https://www.etsp.ru/Details/OriginalCatalog.ashx?action=GetUnits&code=${item.catalogoId}&vehicleId=${item.VehicleId}&ssd=${item.ssd}&categoryId=${item.CategoryId}&kind=0`));
+//         let responses = await Promise.allSettled(requests);
+
+//         for (let response of responses) {
+//             if (response.status === 'fulfilled') {
+//                 let unidades = response.value.data.data.Units;
+//                 if (unidades) {
+//             let resultado = [];
+//             for (let el of unidades) {
+
+//               let unit = {
+//                 catalogoId: "MBC201810",
+//                 VehicleId: item.VehicleId,
+//                 CategoryId: item.CategoryId,
+//                 NameCategorie: item.Name,
+//                 UnitId: el.UnitId,
+//                 ImageUrl: el.ImageUrl,
+//                 NameUnit: el.Name,
+//                 Code: el.Code,
+//                 ssd: el.Ssd,
+//               };
+//               resultado.push(unit);
+//             }
+             
+//               console.log(resultado);
+//             }
+//           }
+//           console.log(item.VehicleId);
+//           processed += data.length;
+//         }
+//         console.log("LISTO");
+//         }
+//     } catch (error) {
+//         console.log(error);
+//     }
+ 
+// }
 
 async function catalogoCategoriasUnidadesImagen() {
   let listos = await CATALOGOCATEGORIUNIDADIMAGENRUSO.distinct("UnitId");
@@ -233,5 +317,7 @@ async function vehiculoCategeria2() {
 }
 
 // vehiculoCategeria2();
+// catalogoCategorias();
+catalogoCategoriasUnidades();
 //catalogoCategoriasUnidadesImagen();
 //modelosMarcas("HYUNDAI_CV");
