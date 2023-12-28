@@ -1,5 +1,6 @@
 const { Translate } = require('@google-cloud/translate').v2;
-const catRuso = require('./models/catalogosCategorias.models')
+// const catRuso = require('./models/catalogosCategoriasUnidad.models')
+const catRusoImage = require('./models/catalogosCategoriasUnidadImagen.models')
 
 async function traducir() {
     try {
@@ -9,14 +10,14 @@ async function traducir() {
         const target = 'es';
 
         const translate = new Translate({ projectId: projectId, key: apiKey });
-        const data = await catRuso.distinct("Name")
+        const data = await catRusoImage.distinct("nombreUnidad")
     
         for (const item of data) {
         
             let [translations] = await translate.translate(item,target)
             
             translations = Array.isArray(translations) ? translations : [translations];
-            await catRuso.updateMany({Name:item},{$set:{nameEs:translations[0]}})
+            await catRusoImage.updateMany({nombreUnidad:item},{$set:{nombreUnidad:translations[0]}})
             console.log(translations[0]);
         }
         // let [translations] = await translate.translate(text, target);
